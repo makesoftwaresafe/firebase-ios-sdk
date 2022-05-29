@@ -90,6 +90,16 @@ class CountingQueryEngine : public QueryEngine {
     return overlays_read_by_key_;
   }
 
+  /**
+   * Returns the number of mutations returned by the MutationQueue's
+   * `AllMutationBatchesAffectingDocumentKey()` and
+   * `AllMutationBatchesAffectingDocumentKeys()` APIs (since the last call to
+   * `ResetCounts()`)
+   */
+  size_t mutations_read_by_key() const {
+    return mutations_read_by_key_;
+  }
+
  private:
   friend class WrappedDocumentOverlayCache;
   friend class WrappedMutationQueue;
