@@ -36,24 +36,26 @@ TargetIndexMatcher::TargetIndexMatcher(const core::Target& target) {
                        ? *target.collection_group()
                        : target.path().last_segment();
   order_bys_ = target.order_bys();
-  inequality_filter_ = absl::nullopt;
 
   for (const Filter& filter : target.filters()) {
     FieldFilter field_filter(filter);
     if (field_filter.IsInequality()) {
-      HARD_ASSERT(!inequality_filter_.has_value() ||
-                      inequality_filter_->field() == field_filter.field(),
-                  "Only a single inequality is supported");
-      inequality_filter_ = field_filter;
+      inequality_filters_.insert(field_filter);
     } else {
       equality_filters_.push_back(field_filter);
     }
   }
 }
 
-bool TargetIndexMatcher::ServedByIndex(const model::FieldIndex& index) {
+bool TargetIndexMatcher::ServedByIndex(const model::FieldIndex& index) const {
   HARD_ASSERT(index.collection_group() == collection_id_,
               "Collection IDs do not match");
+
+  if (HasMultipleInequality()) {
+    // Only single inequality is supported for now.
+    // TODO(Add support for multiple inequality query): b/298441043
+    return false;
+  }
 
   // If there is an array element, find a matching filter.
   const auto& array_segment = index.GetArraySegment();
@@ -90,13 +92,17 @@ bool TargetIndexMatcher::ServedByIndex(const model::FieldIndex& index) {
   // `order_bys_` has at least one element.
   auto order_by_iter = order_bys_.begin();
 
-  if (inequality_filter_.has_value()) {
+  if (!inequality_filters_.empty()) {
+    // Only a single inequality is currently supported. Get the only entry in
+    // the set.
+    const FieldFilter& inequality_filter = *inequality_filters_.begin();
+
     // If there is an inequality filter and the field was not in one of the
     // equality filters above, the next segment must match both the filter
     // and the first orderBy clause.
-    if (equality_segments.count(
-            inequality_filter_.value().field().CanonicalString()) == 0) {
-      if (!MatchesFilter(inequality_filter_, segments[segment_index]) ||
+    if (equality_segments.count(inequality_filter.field().CanonicalString()) ==
+        0) {
+      if (!MatchesFilter(inequality_filter, segments[segment_index]) ||
           !MatchesOrderBy(*(order_by_iter++), segments[segment_index])) {
         return false;
       }
@@ -118,7 +124,11 @@ bool TargetIndexMatcher::ServedByIndex(const model::FieldIndex& index) {
   return true;
 }
 
-model::FieldIndex TargetIndexMatcher::BuildTargetIndex() {
+absl::optional<model::FieldIndex> TargetIndexMatcher::BuildTargetIndex() {
+  if (HasMultipleInequality()) {
+    return {};
+  }
+
   // We want to make sure only one segment created for one field. For example,
   // in case like a == 3 and a > 2, Index: {a ASCENDING} will only be created
   // once.
@@ -175,7 +185,8 @@ model::FieldIndex TargetIndexMatcher::BuildTargetIndex() {
                     std::move(segments), FieldIndex::InitialState());
 }
 
-bool TargetIndexMatcher::HasMatchingEqualityFilter(const Segment& segment) {
+bool TargetIndexMatcher::HasMatchingEqualityFilter(
+    const Segment& segment) const {
   for (const auto& filter : equality_filters_) {
     if (MatchesFilter(filter, segment)) {
       return true;
@@ -185,7 +196,8 @@ bool TargetIndexMatcher::HasMatchingEqualityFilter(const Segment& segment) {
 }
 
 bool TargetIndexMatcher::MatchesFilter(
-    const absl::optional<core::FieldFilter>& filter, const Segment& segment) {
+    const absl::optional<core::FieldFilter>& filter,
+    const Segment& segment) const {
   if (!filter.has_value()) {
     return false;
   }
@@ -193,7 +205,7 @@ bool TargetIndexMatcher::MatchesFilter(
 }
 
 bool TargetIndexMatcher::MatchesFilter(const FieldFilter& filter,
-                                       const Segment& segment) {
+                                       const Segment& segment) const {
   if (filter.field() != segment.field_path()) {
     return false;
   }
@@ -204,7 +216,7 @@ bool TargetIndexMatcher::MatchesFilter(const FieldFilter& filter,
 }
 
 bool TargetIndexMatcher::MatchesOrderBy(const OrderBy& order_by,
-                                        const Segment& segment) {
+                                        const Segment& segment) const {
   if (order_by.field() != segment.field_path()) {
     return false;
   }

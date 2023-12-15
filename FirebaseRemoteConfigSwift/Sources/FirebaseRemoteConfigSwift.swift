@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO(ncooke3): Add warning that importing this extension is deprecated.
+#warning(
+  "All of the public API from `FirebaseRemoteConfigSwift` can now be accessed through the `FirebaseRemoteConfig` module. Therefore, the `FirebaseRemoteConfigSwift` module is deprecated and will be removed in the future. See https://firebase.google.com/docs/ios/swift-migration for migration instructions."
+)
 
+@_exported import enum FirebaseRemoteConfig.RemoteConfigCodableError
+@_exported import struct FirebaseRemoteConfig.RemoteConfigProperty
 // The `@_exported` is needed to prevent breaking clients that are using
 // types prefixed with the `FirebaseRemoteConfigSwift` module name (e.g.
 // `FirebaseRemoteConfigSwift.RemoteConfigValueCodableError`).
-@_exported import FirebaseRemoteConfig
+@_exported import enum FirebaseRemoteConfig.RemoteConfigValueCodableError
